@@ -19,10 +19,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fstream>
+#include <vector>
+#include <map>
 
 #include "oneapi/dnnl/dnnl.h"
 
 #include "common.hpp"
+
 #include "dnnl_common.hpp"
 #include "dnnl_memory.hpp"
 #include "utils/parser.hpp"
@@ -68,6 +72,127 @@ bool allow_enum_tags_only {true};
 int test_start {0};
 bool attr_same_pd_check {false};
 
+std::map<std::string, int(*)(int, char **)> run_fun{
+    {"--conv", conv::bench},
+    {"--deconv", deconv::bench},
+    {"--ip", ip::bench},
+    {"--shuffle", shuffle::bench},
+    {"--reorder", reorder::bench},
+    {"--bnorm", bnorm::bench},
+    {"--lnorm", lnorm::bench},
+    {"--rnn", rnn::bench},
+    {"--softmax", softmax::bench},
+    {"--pool", pool::bench},
+    {"--prelu", prelu::bench},
+    {"--sum", sum::bench},
+    {"--eltwise", eltwise::bench},
+    {"--concat", concat::bench},
+    {"--lrn", lrn::bench},
+    {"--binary", binary::bench},
+    {"--matmul", matmul::bench},
+    {"--resampling", resampling::bench},
+    {"--reduction", reduction::bench},
+    {"--zeropad", zeropad::bench},
+    {"--brgemm", brgemm::bench}
+};  
+// enum class ops {
+//     conv,
+//     deconv,
+//     ip,
+//     shuffle,
+//     reorder,
+//     bnorm,
+//     lnorm,
+//     rnn,
+//     softmax,
+//     pool,
+//     prelu,
+//     sum,
+//     eltwise,
+//     concat,
+//     lrn,
+//     binary,
+//     matmul,
+//     resampling,
+//     reduction,
+//     zeropad,
+//     brgemm,
+//     undefine
+// };
+
+// ops op_type = ops::undefine;
+
+#define tansop(x) ops::x
+
+bool is_new_op(char *op) {
+        if ( !strcmp("--self", op)
+        || !strcmp("--conv", op) || !strcmp("--deconv", op)
+        || !strcmp("--ip", op) || !strcmp("--shuffle", op)
+        || !strcmp("--reorder", op)|| !strcmp("--bnorm", op)
+        || !strcmp("--lnorm", op)|| !strcmp("--rnn", op)|| !strcmp("--softmax", op)
+        || !strcmp("--pool", op)|| !strcmp("--prelu", op)|| !strcmp("--sum", op)
+        || !strcmp("--eltwise", op) || !strcmp("--concat", op)|| !strcmp("--lrn", op)
+        || !strcmp("--binary", op)|| !strcmp("--matmul", op) 
+        || !strcmp("--resampling", op) || !strcmp("--reduction", op) ||
+        !strcmp("--zeropad", op) || !strcmp("--brgemm", op)) {
+            return true;
+        }
+       
+     
+    return false;
+}
+
+void multi_ops(char* option) {
+    std::ifstream ifs(locate_batch_file(std::string(option)));
+    std::vector<std::string> opts;
+    std::string str;
+    bool continued_line = false;
+    while (ifs >> str) {
+        if (str.length() == 0) continue;
+
+        // shell style comments
+        if (str.front() == '#') {
+            std::getline(ifs, str); // take whole commented line out
+            continue;
+        }
+
+        // shell style line break
+        if (continued_line) {
+            // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
+            str = opts.back() + str; // update current line with previous
+            opts.pop_back(); // take previous line out
+        }
+
+        if (str.back() == '\\') {
+            continued_line = true;
+            if (str.length() == 1) continue; // line break lives separately
+            str.erase(str.size() - 1); // otherwise remove it
+        } else {
+            continued_line = false;
+        }
+
+        opts.push_back(std::move(str));
+    }
+
+    std::vector<std::vector<char *>> c_opts;
+    std::string cur_op = "";
+    for (const auto &opt : opts) {
+        if (is_new_op(const_cast<char *>(opt.c_str()))) {
+            c_opts.push_back({});
+            c_opts.back().push_back(const_cast<char *>(opt.c_str()));
+            c_opts.back().push_back("--mode=po");
+            continue;
+        }
+        c_opts.back().push_back(const_cast<char *>(opt.c_str()));
+    }
+
+    for (auto iter : c_opts) {
+        run_fun[iter[0]](iter.size() - 1, iter.data() + 1);
+    }
+
+}
+
+
 int main(int argc, char **argv) {
     using namespace parser;
 
@@ -86,7 +211,9 @@ int main(int argc, char **argv) {
     for (; argc > 0; --argc, ++argv)
         if (!parse_bench_settings(argv[0])) break;
 
-    if (!strcmp("--self", argv[0])) {
+    if (!strcmp("--mulops", argv[0])) {
+        multi_ops(argv[1]);
+    } else if (!strcmp("--self", argv[0])) {
         self::bench(--argc, ++argv);
     } else if (!strcmp("--conv", argv[0])) {
         conv::bench(--argc, ++argv);
