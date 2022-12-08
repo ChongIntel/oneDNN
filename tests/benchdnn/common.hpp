@@ -108,6 +108,7 @@ extern std::string driver_name;
     T(const T &) = delete; \
     T &operator=(const T &) = delete;
 
+std::string locate_batch_file(const std::string &fname);
 using bench_mode_t = std::bitset<8>;
 extern bench_mode_t RUN, CORR, PERF, LIST, PROF; // pre-defined modes
 extern bench_mode_t bench_mode; // user mode
